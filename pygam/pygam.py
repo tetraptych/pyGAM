@@ -1280,6 +1280,65 @@ class GAM(Core, MetaTermMixin):
 
         return self._get_quantiles(X, width, quantiles, prediction=False)
 
+    def prediction_intervals(self, X, y, width=0.95, quantiles=None):
+        """
+        Estimate prediction intervals for the model.
+
+        LinearGAMs use ; other GAMs use empirical sampling.
+
+        Parameters
+        ----------
+        X : array-like of shape (n_samples, m_features)
+            input data matrix
+        width : float on [0,1], optional (default=0.95
+        quantiles : array-like of floats in [0, 1], default: None)
+            instead of specifying the prediciton width, one can specify the
+            quantiles. so width=.95 is equivalent to quantiles=[.025, .975]
+
+        Returns
+        -------
+        intervals: np.array of shape (n_samples, 2 or len(quantiles))
+        """
+        return self._prediction_intervals_via_empirical_sampling(
+            X=X, y=y, width=width, quantiles=quantiles
+        )
+
+    def _prediction_intervals_via_empirical_sampling(self, X, y, width=.95, quantiles=None):
+        """
+        Estimate prediction intervals for the model using empirical sampling.
+
+        Parameters
+        ----------
+        X : array-like of shape (n_samples, m_features)
+            input data matrix
+        width : float on [0,1], optional (default=0.95
+        quantiles : array-like of floats in [0, 1], default: None)
+            instead of specifying the prediciton width, one can specify the
+            quantiles. so width=.95 is equivalent to quantiles=[.025, .975]
+
+        Returns
+        -------
+        intervals: np.array of shape (n_samples, 2 or len(quantiles))
+        """
+        if not self._is_fitted:
+            raise AttributeError('GAM has not been fitted. Call fit first.')
+
+        X = check_X(X, n_feats=self.statistics_['m_features'],
+                    edge_knots=self.edge_knots_, dtypes=self.dtype,
+                    features=self.feature, verbose=self.verbose)
+
+        # Convert width to quantiles.
+        if quantiles is not None:
+            quantiles = np.atleast_1d(quantiles)
+        else:
+            alpha = (1 - width) / 2.
+            quantiles = np.atleast_1d([alpha, 1 - alpha])
+
+        # TODO: Provide a more principled estiamte for n_draws.
+        # TODO: Use generate_X_grid instead of sampling at X directly.
+        samples = self.sample(X, y, quantity='y', n_draws=10**3, sample_at_X=X, n_bootstraps=5)
+        return np.percentile(samples, q=100.0 * quantiles, axis=0).T
+
     def _get_quantiles(self, X, width, quantiles, modelmat=None, lp=None,
                        prediction=False, xform=True, term=-1):
         """
@@ -2285,9 +2344,11 @@ class LinearGAM(GAM):
         self.distribution = NormalDist(scale=self.scale)
         super(LinearGAM, self)._validate_params()
 
-    def prediction_intervals(self, X, width=.95, quantiles=None):
+    def prediction_intervals(self, X, y=None, width=.95, quantiles=None):
         """
-        estimate prediction intervals for LinearGAM
+        Estimate prediction intervals for LinearGAM.
+
+        If `y` is provided, use empirical sampling.
 
         Parameters
         ----------
@@ -2302,6 +2363,9 @@ class LinearGAM(GAM):
         -------
         intervals: np.array of shape (n_samples, 2 or len(quantiles))
         """
+        if y is not None:
+            return self._prediction_intervals_via_empirical_sampling(X=X, y=y, width=width, quantiles=quantiles)
+
         if not self._is_fitted:
             raise AttributeError('GAM has not been fitted. Call fit first.')
 
@@ -2310,6 +2374,7 @@ class LinearGAM(GAM):
                     features=self.feature, verbose=self.verbose)
 
         return self._get_quantiles(X, width, quantiles, prediction=True)
+
 
 class LogisticGAM(GAM):
     """Logistic GAM

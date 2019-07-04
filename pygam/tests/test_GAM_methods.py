@@ -334,7 +334,7 @@ class TestSamplingFromPosterior(object):
             mcycle_gam.sample(X, y, n_bootstraps=0)
 
 
-def test_prediction_interval_unknown_scale():
+def test_prediction_interval_linear_gam_unknown_scale():
     """
     the prediction intervals should be correct to a few decimal places
     we test at a large sample limit, where the t distribution becomes normal
@@ -356,7 +356,7 @@ def test_prediction_interval_unknown_scale():
     assert np.allclose(intervals_b[0], sp.stats.norm.ppf(0.1), atol=0.01)
     assert np.allclose(intervals_b[1], sp.stats.norm.ppf(0.9), atol=0.01)
 
-def test_prediction_interval_known_scale():
+def test_prediction_interval_linear_gam_known_scale():
     """
     the prediction intervals should be correct to a few decimal places
     we test at a large sample limit.
@@ -377,6 +377,47 @@ def test_prediction_interval_known_scale():
 
     assert np.allclose(intervals_b[0], sp.stats.norm.ppf(0.1), atol=0.01)
     assert np.allclose(intervals_b[1], sp.stats.norm.ppf(0.9), atol=0.01)
+
+
+def test_prediction_interval_general_gam():
+    """
+    The prediction intervals from empirical sampling should have the expected shape.
+    """
+    n = 10**4
+    X = np.linspace(0, 1, n)
+    y = np.random.randint(0, 2, size=n)
+
+    gam = PoissonGAM(terms=l(0)).fit(X, y)
+    intervals = gam.prediction_intervals(X, y=y, quantiles=[0.1, .9])
+
+    assert intervals.shape == (len(X), 2)
+
+
+def test_prediction_interval_general_gam_vs_linear_gam():
+    """
+    The prediction intervals from empirical sampling should agree with the ones calculated
+    using a LinearGam to several decimal places.
+    """
+    n = 10**4
+    X = np.linspace(0, 1, n)
+    y = np.random.randn(n)
+
+    gam_a = LinearGAM(terms=l(0), scale=1.).fit(X, y)
+    gam_b = LinearGAM(s(0, n_splines=4), scale=1.).fit(X, y)
+
+    intervals_a = gam_a._prediction_intervals_via_empirical_sampling(
+        X=X, y=y, quantiles=[0.1, .9]
+    ).mean(axis=0)
+    intervals_b = gam_b.prediction_intervals(X, y=None, quantiles=[0.1, .9]).mean(axis=0)
+
+    assert intervals_a.shape == intervals_b.shape
+
+    assert np.allclose(intervals_a[0], sp.stats.norm.ppf(0.1), atol=0.01)
+    assert np.allclose(intervals_a[1], sp.stats.norm.ppf(0.9), atol=0.01)
+
+    assert np.allclose(intervals_b[0], sp.stats.norm.ppf(0.1), atol=0.01)
+    assert np.allclose(intervals_b[1], sp.stats.norm.ppf(0.9), atol=0.01)
+
 
 def test_pvalue_rejects_useless_feature(wage_X_y):
     """
